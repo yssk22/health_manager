@@ -28,7 +28,8 @@ module HealthManager
 
       def notify_listener(event_type, app_state, *args)
         check_event_type(event_type)
-        listeners = @listeners[event_type] || []
+        return unless @listeners && @listeners[event_type]
+        listeners = @listeners[event_type]
         listeners.each do |block|
           block.call(app_state, *args)
         end
@@ -110,7 +111,6 @@ module HealthManager
 
     def add_pending_restart(index, receipt)
       @pending_restarts[index] = receipt
-      force_missing_indices_recalculation
     end
 
     def remove_pending_restart(index)
@@ -123,7 +123,8 @@ module HealthManager
       if running_state?(beat)
         if  instance['state'] == RUNNING &&
             instance['instance'] != beat['instance']
-          notify(:extra_instances, [[beat['instance'],'Instance mismatch']] )
+          notify(:extra_instances, [[beat['instance'],
+                                     "Instance mismatch, heartbeat: #{beat['instance']}, expected: #{instance['instance']}"]])
         else
           instance['last_heartbeat'] = now
           instance['timestamp'] = now
@@ -137,14 +138,16 @@ module HealthManager
           'crash_timestamp' => beat['state_timestamp']
         }
       end
-      force_missing_indices_recalculation
       justify_existence_for_now
     end
 
     def check_for_missing_indices
-      unless reset_recently? or missing_indices.empty?
-        notify(:missing_instances,  missing_indices)
-        reset_missing_indices
+      unless reset_recently?
+        indices = missing_indices
+        unless indices.empty?
+          notify(:missing_instances,  indices)
+          reset_missing_indices
+        end
       end
     end
 
@@ -193,19 +196,10 @@ module HealthManager
     end
 
     def reset_missing_indices
-      force_missing_indices_recalculation
       @reset_timestamp = now
     end
 
     def missing_indices
-      @missing_indices ||= calculate_missing_indices
-    end
-
-    def force_missing_indices_recalculation
-      @missing_indices = nil
-    end
-
-    def calculate_missing_indices
       return [] unless [
                         @state == STARTED,
                         @package_state == STAGED
@@ -262,6 +256,7 @@ module HealthManager
     end
 
     def process_exit_dea(message)
+      reset_missing_indices
       notify(:exit_dea, message)
     end
 
@@ -297,6 +292,18 @@ module HealthManager
     def process_droplet_updated(message)
       reset_missing_indices
       notify(:droplet_updated, message)
+    end
+
+    def mark_instance_as_down(version, index, instance_id)
+      instance = get_instance(version, index)
+      if instance['instance'] == instance_id
+        logger.debug("Marking as down: #{version}, #{index}, #{instance_id}")
+        instance['state'] = DOWN
+      elsif instance['instance']
+        logger.warn("instance mismatch. expected: #{instance['instance']}, got: #{instance_id}")
+      else
+        # NOOP for freshly created instance with nil instance_id
+      end
     end
 
     def get_version(version = @live_version)

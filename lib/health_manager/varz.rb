@@ -43,6 +43,7 @@ module HealthManager
       declare_counter :droplet_updated_msgs_received
       declare_counter :healthmanager_status_msgs_received
       declare_counter :healthmanager_health_request_msgs_received
+      declare_counter :healthmanager_droplet_request_msgs_received
 
       declare_counter :analysis_loop_duration
       declare_counter :bulk_update_loop_duration
@@ -57,6 +58,7 @@ module HealthManager
     end
 
     def reset_expected_stats
+      @expected_stats_reset_at = Time.now
       EXPECTED_STATS.each { |s| hold(s); reset(s) }
     end
 
@@ -74,6 +76,7 @@ module HealthManager
     end
 
     def publish_expected_stats
+      set(:bulk_update_loop_duration, Time.now - @expected_stats_reset_at)
       release_expected_stats
       publish
     end

@@ -1,10 +1,9 @@
 require 'spec_helper'
 
 describe HealthManager do
-
   describe "Varz" do
     before :each do
-      @v = Varz.new
+      @v = HealthManager::Varz.new
     end
 
     def v; @v; end
@@ -24,7 +23,7 @@ describe HealthManager do
     it 'should disallow double declarations' do
       v.declare_counter :foo
       v.declare_counter :bar
-      vv = Varz.new
+      vv = HealthManager::Varz.new
       vv.declare_counter :foo #ok to declare same counters for different Varz objects
       lambda { v.declare_counter(:foo).should raise_error ArgumentError }
     end
@@ -212,6 +211,17 @@ describe HealthManager do
           v.held?(:total).should be_true
           v.release_expected_stats
           v.held?(:total).should be_false
+        end
+
+        it 'should calculate elapsed time' do
+          v.reset_expected_stats
+          v.publish_expected_stats
+          v.get(:bulk_update_loop_duration).should be < 1
+
+          v.reset_expected_stats
+          Timecop.travel(Time.now + 5)
+          v.publish_expected_stats
+          v.get(:bulk_update_loop_duration).should be >= 5
         end
       end
     end
